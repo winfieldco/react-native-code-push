@@ -32,7 +32,9 @@ var mainApplicationPath = findMainApplication() || glob.sync("**/MainApplication
 var getJSBundleFileOverride = `
     @Override
     protected String getJSBundleFile() {
-      return CodePush.getJSBundleFile();
+      // XXX Use our main.jsbundle convention otherwise it will use index.android.bundle which won't exist...
+      // https://github.com/Microsoft/react-native-code-push/issues/260
+      return CodePush.getJSBundleFile("main.jsbundle");
     }
 `;
 
