@@ -1,4 +1,4 @@
-#import "RCTEventEmitter.h"
+#import <React/RCTEventEmitter.h>
 
 #import <Foundation/Foundation.h>
 
