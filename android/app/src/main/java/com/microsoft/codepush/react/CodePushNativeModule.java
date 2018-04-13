@@ -13,6 +13,7 @@ import com.facebook.react.ReactInstanceManager;
 import com.facebook.react.bridge.Arguments;
 import com.facebook.react.bridge.LifecycleEventListener;
 import com.facebook.react.bridge.Promise;
+import com.facebook.react.bridge.JSBundleLoader;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
@@ -101,46 +102,24 @@ public class CodePushNativeModule extends ReactContextBaseJavaModule {
     // to approach this.
     private void setJSBundle(ReactInstanceManager instanceManager, String latestJSBundleFile) throws NoSuchFieldException, IllegalAccessException {
         try {
-            Field bundleLoaderField = instanceManager.getClass().getDeclaredField("mBundleLoader");
-            Class<?> jsBundleLoaderClass = Class.forName("com.facebook.react.cxxbridge.JSBundleLoader");
-            Method createFileLoaderMethod = null;
-
-            Method[] methods = jsBundleLoaderClass.getDeclaredMethods();
-            for (Method method : methods) {
-                if (method.getName().equals("createFileLoader")) {
-                    createFileLoaderMethod = method;
-                    break;
-                }
-            }
-
-            if (createFileLoaderMethod == null) {
-                throw new NoSuchMethodException("Could not find a recognized 'createFileLoader' method");
-            }
-
-            int numParameters = createFileLoaderMethod.getGenericParameterTypes().length;
-            Object latestJSBundleLoader;
-
-            if (numParameters == 1) {
-                // RN >= v0.34
-                latestJSBundleLoader = createFileLoaderMethod.invoke(jsBundleLoaderClass, latestJSBundleFile);
-            } else if (numParameters == 2) {
-                // RN >= v0.31 && RN < v0.34
-                latestJSBundleLoader = createFileLoaderMethod.invoke(jsBundleLoaderClass, getReactApplicationContext(), latestJSBundleFile);
+            JSBundleLoader latestJSBundleLoader;
+            if (latestJSBundleFile.toLowerCase().startsWith("assets://")) {
+                latestJSBundleLoader = JSBundleLoader.createAssetLoader(getReactApplicationContext(), latestJSBundleFile, false);
             } else {
-                throw new NoSuchMethodException("Could not find a recognized 'createFileLoader' method");
+                latestJSBundleLoader = JSBundleLoader.createFileLoader(latestJSBundleFile);
             }
 
+            Field bundleLoaderField = instanceManager.getClass().getDeclaredField("mBundleLoader");
             bundleLoaderField.setAccessible(true);
             bundleLoaderField.set(instanceManager, latestJSBundleLoader);
         } catch (Exception e) {
-            // RN < v0.31
-            Field jsBundleField = instanceManager.getClass().getDeclaredField("mJSBundleFile");
-            jsBundleField.setAccessible(true);
-            jsBundleField.set(instanceManager, latestJSBundleFile);
+            CodePushUtils.log("Unable to set JSBundle - CodePush may not support this version of React Native");
+            throw new IllegalAccessException("Could not setJSBundle");
         }
     }
 
     private void loadBundle() {
+        clearLifecycleEventListener();        
         mCodePush.clearDebugCacheIfNeeded();
         try {
             // #1) Get the ReactInstanceManager instance, which is what includes the
@@ -177,6 +156,14 @@ public class CodePushNativeModule extends ReactContextBaseJavaModule {
             loadBundleLegacy();
         }
     }
+
+    private void clearLifecycleEventListener() {
+        // Remove LifecycleEventListener to prevent infinite restart loop
+        if (mLifecycleEventListener != null) {
+            getReactApplicationContext().removeLifecycleEventListener(mLifecycleEventListener);
+            mLifecycleEventListener = null;
+        }
+    }    
 
     // Use reflection to find the ReactInstanceManager. See #556 for a proposal for a less brittle way to approach this.
     private ReactInstanceManager resolveInstanceManager() throws NoSuchFieldException, IllegalAccessException {
